@@ -174,7 +174,7 @@ class Block(nn.Module):
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
+    def __init__(self, img_size=144, patch_size=16, in_chans=3, embed_dim=768):
         super().__init__()
         num_patches = (img_size // patch_size) * (img_size // patch_size)
         self.img_size = img_size
@@ -184,6 +184,10 @@ class PatchEmbed(nn.Module):
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x):
+        
+        
+        #print('revceived x shape: ', x.shape)
+        
         B, C, H, W = x.shape
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x
@@ -194,7 +198,7 @@ class ConvEmbed(nn.Module):
     3x3 Convolution stems for ViT following ViTC models
     """
 
-    def __init__(self, channels, strides, img_size=224, in_chans=3, batch_norm=True):
+    def __init__(self, channels, strides, img_size=144, in_chans=3, batch_norm=True):
         super().__init__()
         # Build the stems
         stem = []
@@ -330,7 +334,7 @@ class VisionTransformer(nn.Module):
     """ Vision Transformer """
     def __init__(
         self,
-        img_size=[224],
+        img_size=[144],
         patch_size=16,
         in_chans=3,
         embed_dim=768,
@@ -408,6 +412,11 @@ class VisionTransformer(nn.Module):
         B, N, D = x.shape
 
         # -- add positional embedding to x
+
+        #SHAPE OF POS_EMBED
+
+        #print(f"Pos embed shape: {self.pos_embed.shape}")
+
         pos_embed = self.interpolate_pos_encoding(x, self.pos_embed)
         x = x + pos_embed
 
@@ -432,6 +441,19 @@ class VisionTransformer(nn.Module):
         class_emb = pos_embed[:, 0]
         pos_embed = pos_embed[:, 1:]
         dim = x.shape[-1]
+
+        #print out all of the shapes
+
+        
+        #print(f"X shape: {x.shape}")
+        #print(f"Pos emb shape: {pos_embed.shape}")
+
+        #print(f"shape of pos after reshape will be: 1, {int(math.sqrt(N))}, {int(math.sqrt(N))}, {dim}")
+
+        #print(f"scale factor: {math.sqrt(npatch / N)}")
+        
+
+
         pos_embed = nn.functional.interpolate(
             pos_embed.reshape(1, int(math.sqrt(N)), int(math.sqrt(N)), dim).permute(0, 3, 1, 2),
             scale_factor=math.sqrt(npatch / N),

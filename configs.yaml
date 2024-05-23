@@ -8,7 +8,7 @@ data:
   crop_scale:
   - 0.3
   - 1.0
-  crop_size: 224
+  crop_size: 144
   image_folder: imagenet_full_size/061417/
   num_workers: 10
   pin_mem: true
@@ -17,7 +17,7 @@ data:
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: $replace_this_with_path_for_experiment_logs/in2kk_vith14.224-bs.2048-ep.66/
+  folder: /mnt/a/MainFolder/Neural Nirvana/encoder_transformer/model_copy/ijepa/logs
   write_tag: jepa
 mask:
   allow_overlap: false
@@ -30,14 +30,14 @@ mask:
   min_keep: 10
   num_enc_masks: 1
   num_pred_masks: 4
-  patch_size: 14
+  patch_size: 12
   pred_mask_scale:
   - 0.15
   - 0.2
 meta:
   copy_data: false
   load_checkpoint: false
-  model_name: vit_huge
+  model_name: vit_tiny
   pred_depth: 12
   pred_emb_dim: 384
   read_checkpoint: null

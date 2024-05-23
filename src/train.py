@@ -42,12 +42,14 @@ from src.utils.logging import (
     AverageMeter)
 from src.utils.tensors import repeat_interleave_batch
 from src.datasets.imagenet1k import make_imagenet1k
-
+from src.datasets.EEG_loader import load_eeg_data
 from src.helper import (
     load_checkpoint,
     init_model,
     init_opt)
 from src.transforms import make_transforms
+
+from src.datasets import dummy
 
 # --
 log_timings = True
@@ -189,19 +191,10 @@ def main(args, resume_preempt=False):
         color_jitter=color_jitter)
 
     # -- init data-loaders/samplers
-    _, unsupervised_loader, unsupervised_sampler = make_imagenet1k(
-            transform=transform,
+    _, unsupervised_loader = load_eeg_data(
             batch_size=batch_size,
             collator=mask_collator,
-            pin_mem=pin_mem,
-            training=True,
-            num_workers=num_workers,
-            world_size=world_size,
-            rank=rank,
-            root_path=root_path,
-            image_folder=image_folder,
-            copy_data=copy_data,
-            drop_last=True)
+            pin_mem=pin_mem)
     ipe = len(unsupervised_loader)
 
     # -- init optimizer and scheduler
@@ -268,7 +261,7 @@ def main(args, resume_preempt=False):
         logger.info('Epoch %d' % (epoch + 1))
 
         # -- update distributed-data-loader epoch
-        unsupervised_sampler.set_epoch(epoch)
+        #unsupervised_sampler.set_epoch(epoch)
 
         loss_meter = AverageMeter()
         maskA_meter = AverageMeter()
@@ -279,7 +272,16 @@ def main(args, resume_preempt=False):
 
             def load_imgs():
                 # -- unsupervised imgs
-                imgs = udata[0].to(device, non_blocking=True)
+                imgs = udata['eeg'].to(device, non_blocking=True)
+                
+                ## for each sample in imgs
+                #print(f"general imgs shape: {imgs.shape}")
+                for i in range(imgs.shape[0]):
+                    #print(f"imgs[i].shape: {imgs[i].shape}")
+                    this_img = imgs[i]
+                    
+                    this_img = this_img.reshape(3,144,144)
+                
                 masks_1 = [u.to(device, non_blocking=True) for u in masks_enc]
                 masks_2 = [u.to(device, non_blocking=True) for u in masks_pred]
                 return (imgs, masks_1, masks_2)
