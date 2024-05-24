@@ -14,6 +14,7 @@ import yaml
 
 from src.utils.distributed import init_distributed
 from src.train import main as app_main
+from src.train_reconstruction import main as app_main_reconstruct
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -26,30 +27,62 @@ parser.add_argument(
 
 
 def process_main(rank, fname, world_size, devices):
-    import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(devices[rank].split(':')[-1])
+    
+    
+    training_mode = 'reconstruction'
+    
+    if training_mode == 'reconstruction':
+        import os
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(devices[rank].split(':')[-1])
 
-    import logging
-    logging.basicConfig()
-    logger = logging.getLogger()
-    if rank == 0:
-        logger.setLevel(logging.INFO)
-    else:
-        logger.setLevel(logging.ERROR)
+        import logging
+        logging.basicConfig()
+        logger = logging.getLogger()
+        if rank == 0:
+            logger.setLevel(logging.INFO)
+        else:
+            logger.setLevel(logging.ERROR)
 
-    logger.info(f'called-params {fname}')
+        logger.info(f'called-params {fname}')
 
-    # -- load script params
-    params = None
-    with open(fname, 'r') as y_file:
-        params = yaml.load(y_file, Loader=yaml.FullLoader)
-        logger.info('loaded params...')
-        pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(params)
+        # -- load script params
+        params = None
+        with open(fname, 'r') as y_file:
+            params = yaml.load(y_file, Loader=yaml.FullLoader)
+            logger.info('loaded params...')
+            pp = pprint.PrettyPrinter(indent=4)
+            pp.pprint(params)
 
-    world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
-    logger.info(f'Running... (rank: {rank}/{world_size})')
-    app_main(args=params)
+        world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
+        logger.info(f'Running... (rank: {rank}/{world_size})')
+        app_main_reconstruct(args=params)
+    
+    elif training_mode == 'pretraining':
+    
+        import os
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(devices[rank].split(':')[-1])
+
+        import logging
+        logging.basicConfig()
+        logger = logging.getLogger()
+        if rank == 0:
+            logger.setLevel(logging.INFO)
+        else:
+            logger.setLevel(logging.ERROR)
+
+        logger.info(f'called-params {fname}')
+
+        # -- load script params
+        params = None
+        with open(fname, 'r') as y_file:
+            params = yaml.load(y_file, Loader=yaml.FullLoader)
+            logger.info('loaded params...')
+            pp = pprint.PrettyPrinter(indent=4)
+            pp.pprint(params)
+
+        world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
+        logger.info(f'Running... (rank: {rank}/{world_size})')
+        app_main(args=params)
 
 
 if __name__ == '__main__':
