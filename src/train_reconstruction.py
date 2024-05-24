@@ -50,7 +50,7 @@ from src.helper import (
 from src.transforms import make_transforms
 
 from src.datasets import dummy
-
+from src.models import vision_decoder as decoder_vit
 # --
 log_timings = True
 log_freq = 10
@@ -169,6 +169,25 @@ def main(args, resume_preempt=False):
         pred_emb_dim=pred_emb_dim,
         model_name=model_name)
     target_encoder = copy.deepcopy(encoder)
+    
+    
+    
+    decoder = decoder_vit.vision_decoder(
+        time_len = 486,
+        embed_dim = 192,
+        in_chans = 144,
+    )
+    
+    def freeze_encoder(model):
+        for param in model.parameters():
+            param.requires_grad = False
+            
+    #freeze_encoder(encoder)
+    
+    
+    # move models to device
+    decoder = decoder.to(device)
+        
 
     # -- make data transforms
     mask_collator = MBMaskCollator(
@@ -182,13 +201,7 @@ def main(args, resume_preempt=False):
         allow_overlap=allow_overlap,
         min_keep=min_keep)
 
-    transform = make_transforms(
-        crop_size=crop_size,
-        crop_scale=crop_scale,
-        gaussian_blur=use_gaussian_blur,
-        horizontal_flip=use_horizontal_flip,
-        color_distortion=use_color_distortion,
-        color_jitter=color_jitter)
+    
 
     # -- init data-loaders/samplers
     _, unsupervised_loader = load_eeg_data(
@@ -294,24 +307,12 @@ def main(args, resume_preempt=False):
                 _new_wd = wd_scheduler.step()
                 # --
 
-                def forward_target():
-                    with torch.no_grad():
-                        h = target_encoder(imgs)
-                        h = F.layer_norm(h, (h.size(-1),))  # normalize over feature-dim
-                        B = len(h)
-                        # -- create targets (masked regions of h)
-                        h = apply_masks(h, masks_pred)
-                        h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
-                        return h
+                
 
                 def forward_context():
                     z = encoder(imgs, masks_enc)
-                    
-                    print(f"shape of the encoder output: {z.shape}")
-                    
-                    z = predictor(z, masks_enc, masks_pred)
-                    
-                    print(f"shape of the predictor output: {z.shape}")
+                    z = decoder(z, masks_enc)
+                    print(f"shape of the prediction output: {z.shape}")
                     return z
 
                 def loss_fn(z, h):
@@ -321,7 +322,7 @@ def main(args, resume_preempt=False):
 
                 # Step 1. Forward
                 with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_bfloat16):
-                    h = forward_target()
+                    h = imgs
                     z = forward_context()
                     loss = loss_fn(z, h)
 
