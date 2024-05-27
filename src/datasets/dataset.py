@@ -153,10 +153,10 @@ class EEGDataLoader():
         #print("EEG shape (pre re-shape): ", eeg.shape)
         
         # Now reshape it into (3, 144, 144)
-        eeg = eeg.reshape(3, 144, 144)
+        eeg_for_jepa = eeg.reshape(3, 144, 144)
         
         #print("EEG shape: ", eeg.shape)
-        return {'eeg': eeg}
+        return {'eeg': eeg_for_jepa, 'reconstruction_target': eeg}
         
 
 def create_dataset(raw_file_path, event_description, batch_size):

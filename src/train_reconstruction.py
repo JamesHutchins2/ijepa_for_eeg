@@ -21,7 +21,7 @@ import copy
 import logging
 import sys
 import yaml
-
+import matplotlib.pyplot as plt
 import numpy as np
 
 import torch
@@ -50,7 +50,7 @@ from src.helper import (
 from src.transforms import make_transforms
 
 from src.datasets import dummy
-from src.models import vision_decoder as decoder_vit
+from src.models import vit_decoder as decoder_vit
 # --
 log_timings = True
 log_freq = 10
@@ -148,8 +148,9 @@ def main(args, resume_preempt=False):
     save_path = os.path.join(folder, f'{tag}' + '-ep{epoch}.pth.tar')
     latest_path = os.path.join(folder, f'{tag}-latest.pth.tar')
     load_path = None
+    load_model = False
     if load_model:
-        load_path = os.path.join(folder, r_file) if r_file is not None else latest_path
+        load_path = "/mnt/a/MainFolder/Neural Nirvana/encoder_transformer/model_copy/ijepa/logs/jepa_ep400.pth.tar"
 
     # -- make csv_logger
     csv_logger = CSVLogger(log_file,
@@ -170,23 +171,14 @@ def main(args, resume_preempt=False):
         model_name=model_name)
     target_encoder = copy.deepcopy(encoder)
     
+    from src.models import simple_decode as decoder_vit
     
     
-    decoder = decoder_vit.vision_decoder(
-        time_len = 486,
-        embed_dim = 192,
-        in_chans = 144,
+    decoder = decoder_vit.VariableInputNet(
+        
     )
-    
-    def freeze_encoder(model):
-        for param in model.parameters():
-            param.requires_grad = False
-            
-    #freeze_encoder(encoder)
-    
-    
-    # move models to device
     decoder = decoder.to(device)
+    
         
 
     # -- make data transforms
@@ -229,6 +221,12 @@ def main(args, resume_preempt=False):
     target_encoder = DistributedDataParallel(target_encoder)
     for p in target_encoder.parameters():
         p.requires_grad = False
+    
+    """for p in encoder.parameters():
+        p.requires_grad = False
+    for p in predictor.parameters():
+        p.requires_grad = False"""
+        
 
     # -- momentum schedule
     momentum_scheduler = (ema[0] + i*(ema[1]-ema[0])/(ipe*num_epochs*ipe_scale)
@@ -250,7 +248,12 @@ def main(args, resume_preempt=False):
             wd_scheduler.step()
             next(momentum_scheduler)
             mask_collator.step()
-
+    
+    def freeze(model):
+        for param in model.parameters():
+            param.requires_grad = False
+    
+    
     def save_checkpoint(epoch):
         save_dict = {
             'encoder': encoder.state_dict(),
@@ -289,9 +292,9 @@ def main(args, resume_preempt=False):
                 
                 ## for each sample in imgs
                 #print(f"general imgs shape: {imgs.shape}")
-                for i in range(imgs.shape[0]):
+                for k in range(imgs.shape[0]):
                     #print(f"imgs[i].shape: {imgs[i].shape}")
-                    this_img = imgs[i]
+                    this_img = imgs[k]
                     
                     this_img = this_img.reshape(3,144,144)
                 
@@ -310,6 +313,8 @@ def main(args, resume_preempt=False):
                 
 
                 def forward_context():
+                    print(f"passed image shape: {imgs.shape}")
+                    print("passed masks_enc shape: ", masks_enc[0].shape)
                     z = encoder(imgs, masks_enc)
                     z = decoder(z, masks_enc)
                     print(f"shape of the prediction output: {z.shape}")
@@ -322,9 +327,26 @@ def main(args, resume_preempt=False):
 
                 # Step 1. Forward
                 with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_bfloat16):
-                    h = imgs
+                    h = udata['reconstruction_target'].to(device, non_blocking=True)
+                    
+                    #expand h back to batch, 128, 486
+                    
                     z = forward_context()
+                    
+                    
                     loss = loss_fn(z, h)
+                    
+                    
+                    #every 20 itterations save the reconstruction plot
+                    
+                        #clear the plot
+                    plt.clf()
+                    plt.plot(h[0,0,:].cpu().detach().numpy())
+                    plt.plot(z[0,0,:].cpu().detach().numpy())
+                    #save the plot to a png file
+                    plt.savefig(f'/mnt/a/MainFolder/Neural Nirvana/encoder_transformer/model_copy/ijepa/reconstructions/EEG_reconstruction_epoch_{epoch}.png')
+                        
+                
 
                 #  Step 2. Backward & step
                 if use_bfloat16:
