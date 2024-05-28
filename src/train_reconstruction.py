@@ -46,6 +46,7 @@ from src.datasets.EEG_loader import load_eeg_data
 from src.helper import (
     load_checkpoint,
     init_model,
+    init_model_reconstruct,
     init_opt)
 from src.transforms import make_transforms
 
@@ -162,7 +163,7 @@ def main(args, resume_preempt=False):
                            ('%d', 'time (ms)'))
 
     # -- init model
-    encoder, predictor = init_model(
+    encoder, predictor = init_model_reconstruct(
         device=device,
         patch_size=patch_size,
         crop_size=crop_size,
@@ -172,12 +173,6 @@ def main(args, resume_preempt=False):
     target_encoder = copy.deepcopy(encoder)
     
     from src.models import simple_decode as decoder_vit
-    
-    
-    decoder = decoder_vit.VariableInputNet(
-        
-    )
-    decoder = decoder.to(device)
     
         
 
@@ -235,7 +230,7 @@ def main(args, resume_preempt=False):
     start_epoch = 0
     # -- load training checkpoint
     if load_model:
-        encoder, predictor, target_encoder, optimizer, scaler, start_epoch = load_checkpoint(
+        encoder, _, target_encoder, optimizer, scaler, start_epoch = load_checkpoint(
             device=device,
             r_path=load_path,
             encoder=encoder,
@@ -253,12 +248,28 @@ def main(args, resume_preempt=False):
         for param in model.parameters():
             param.requires_grad = False
     
+    #freeze(encoder)
+    freeze(encoder)
+    #freeze(predictor)
+    freeze(target_encoder)
+    
+    
+    # load a new optimizer
+    optimizer = torch.optim.Adam(
+        list(predictor.parameters()),
+        lr=0.001,
+        betas=(0.9, 0.999),
+        weight_decay=1e-4
+    )
+    
+    
     
     def save_checkpoint(epoch):
         save_dict = {
             'encoder': encoder.state_dict(),
             'predictor': predictor.state_dict(),
             'target_encoder': target_encoder.state_dict(),
+            #'decoder': decoder.state_dict(),
             'opt': optimizer.state_dict(),
             'scaler': None if scaler is None else scaler.state_dict(),
             'epoch': epoch,
@@ -289,19 +300,15 @@ def main(args, resume_preempt=False):
             def load_imgs():
                 # -- unsupervised imgs
                 imgs = udata['eeg'].to(device, non_blocking=True)
+                #print("length of imgs: ", len(imgs))
+                #print(f"imgs shape: {imgs.shape}")
+                h = udata['reconstruction_target'].to(device, non_blocking=True)
                 
-                ## for each sample in imgs
-                #print(f"general imgs shape: {imgs.shape}")
-                for k in range(imgs.shape[0]):
-                    #print(f"imgs[i].shape: {imgs[i].shape}")
-                    this_img = imgs[k]
-                    
-                    this_img = this_img.reshape(3,144,144)
                 
                 masks_1 = [u.to(device, non_blocking=True) for u in masks_enc]
                 masks_2 = [u.to(device, non_blocking=True) for u in masks_pred]
-                return (imgs, masks_1, masks_2)
-            imgs, masks_enc, masks_pred = load_imgs()
+                return (imgs, masks_1, masks_2, h)
+            imgs, masks_enc, masks_pred, target = load_imgs()
             maskA_meter.update(len(masks_enc[0][0]))
             maskB_meter.update(len(masks_pred[0][0]))
 
@@ -309,62 +316,60 @@ def main(args, resume_preempt=False):
                 _new_lr = scheduler.step()
                 _new_wd = wd_scheduler.step()
                 # --
-
+                #shape of the prediction output: torch.Size([4, 30, 1280])
                 
 
                 def forward_context():
-                    print(f"passed image shape: {imgs.shape}")
-                    print("passed masks_enc shape: ", masks_enc[0].shape)
+                    #print(f"passed image shape: {imgs.shape}")
+                    #print("passed masks_enc shape: ", masks_enc[0].shape)
                     z = encoder(imgs, masks_enc)
-                    z = decoder(z, masks_enc)
-                    print(f"shape of the prediction output: {z.shape}")
+                    #print(f"encoder output shape: {z.shape}")
+                    z = predictor(z, masks_enc, masks_pred)
+                    #print(f"shape of the prediction output: {z.shape}")
                     return z
 
                 def loss_fn(z, h):
-                    loss = F.smooth_l1_loss(z, h)
-                    loss = AllReduce.apply(loss)
-                    return loss
+                    mse_loss = F.mse_loss(z, h)
+                    amplitude_loss = F.l1_loss(z.abs().mean(), h.abs().mean())  # L1 loss on the mean amplitude
+                    return 10 * mse_loss + amplitude_loss
+                    
 
                 # Step 1. Forward
-                with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_bfloat16):
-                    h = udata['reconstruction_target'].to(device, non_blocking=True)
+                #with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_bfloat16):
+                
+                
                     
-                    #expand h back to batch, 128, 486
-                    
-                    z = forward_context()
+                z = forward_context()
                     
                     
-                    loss = loss_fn(z, h)
+                loss = loss_fn(z, target)
                     
                     
                     #every 20 itterations save the reconstruction plot
                     
                         #clear the plot
-                    plt.clf()
-                    plt.plot(h[0,0,:].cpu().detach().numpy())
-                    plt.plot(z[0,0,:].cpu().detach().numpy())
-                    #save the plot to a png file
-                    plt.savefig(f'/mnt/a/MainFolder/Neural Nirvana/encoder_transformer/model_copy/ijepa/reconstructions/EEG_reconstruction_epoch_{epoch}.png')
+                    #get a random number between 0, and 127
+                if itr % 20 == 0:    
                         
+                        random_number = np.random.randint(0, 127)
+                    
+                        plt.clf()
+                        plt.plot(target[0,random_number,:].cpu().detach().numpy())
+                        plt.plot(z[0,random_number,:].cpu().detach().numpy())
+                        #save the plot to a png file
+                        plt.savefig(f'/mnt/a/MainFolder/Neural Nirvana/encoder_transformer/model_copy/ijepa/reconstructions/EEG_reconstruction_epoch_{epoch}.png')
+                            
                 
 
-                #  Step 2. Backward & step
-                if use_bfloat16:
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    optimizer.step()
+                
+                loss.backward()
+                optimizer.step()
+                    
                 grad_stats = grad_logger(encoder.named_parameters())
                 optimizer.zero_grad()
 
                 # Step 3. momentum update of target encoder
-                with torch.no_grad():
-                    m = next(momentum_scheduler)
-                    for param_q, param_k in zip(encoder.parameters(), target_encoder.parameters()):
-                        param_k.data.mul_(m).add_((1.-m) * param_q.detach().data)
-
+                
                 return (float(loss), _new_lr, _new_wd, grad_stats)
             (loss, _new_lr, _new_wd, grad_stats), etime = gpu_timer(train_step)
             loss_meter.update(loss)

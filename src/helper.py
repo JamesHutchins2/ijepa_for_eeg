@@ -67,8 +67,8 @@ def load_checkpoint(
 
 def init_model(
     device,
-    patch_size=16,
-    model_name='vit_base',
+    patch_size=32,
+    model_name='vit_huge',
     crop_size=224,
     pred_depth=6,
     pred_emb_dim=384
@@ -102,6 +102,49 @@ def init_model(
     predictor.to(device)
     logger.info(encoder)
     return encoder, predictor
+
+
+def init_model_reconstruct(
+    device,
+    patch_size=32,
+    model_name='vit_huge',
+    crop_size=224,
+    pred_depth=6,
+    pred_emb_dim=384
+):
+    encoder = vit.__dict__[model_name](
+        img_size=[crop_size],
+        patch_size=patch_size)
+    predictor = vit.__dict__['vit_Reconstructor'](
+        num_patches=encoder.patch_embed.num_patches,
+        embed_dim=encoder.embed_dim,
+        predictor_embed_dim=pred_emb_dim,
+        depth=pred_depth,
+        num_heads=encoder.num_heads)
+
+    def init_weights(m):
+        if isinstance(m, torch.nn.Linear):
+            trunc_normal_(m.weight, std=0.02)
+            if m.bias is not None:
+                torch.nn.init.constant_(m.bias, 0)
+        elif isinstance(m, torch.nn.LayerNorm):
+            torch.nn.init.constant_(m.bias, 0)
+            torch.nn.init.constant_(m.weight, 1.0)
+
+    for m in encoder.modules():
+        init_weights(m)
+
+    for m in predictor.modules():
+        init_weights(m)
+
+    encoder.to(device)
+    predictor.to(device)
+    logger.info(encoder)
+    return encoder, predictor
+
+
+
+
 
 
 def init_opt(

@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader
 # 3. A distributed sampler object
 
 def load_eeg_data(
-                  batch_size=32,
+                  batch_size=1,
                   collator=None,
                   num_workers=4,
                   pin_mem=True):
@@ -43,7 +43,7 @@ def load_eeg_data(
     Returns:
         tuple: Contains the dataset and the DataLoader.
     """
-    path_indices_to_use = [9]#, 2, 3, 6, 8, 11, 12, 13]
+    path_indices_to_use = [26]#, 2, 3, 6, 8, 11, 12, 13]
     paths_EEG = []
 
     for i in range(1, 51):

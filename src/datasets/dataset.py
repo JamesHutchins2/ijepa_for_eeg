@@ -156,6 +156,7 @@ class EEGDataLoader():
         eeg_for_jepa = eeg.reshape(3, 144, 144)
         
         #print("EEG shape: ", eeg.shape)
+        #print("EEG for JEPA shape: ", eeg_for_jepa.shape)
         return {'eeg': eeg_for_jepa, 'reconstruction_target': eeg}
         
 
